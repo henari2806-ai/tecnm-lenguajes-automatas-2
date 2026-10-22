@@ -112,9 +112,24 @@ int main(void) {
 
 ## 4. Fase 3: El Auditor (Resultados del Test Harness)
 *Pruebas ejecutadas:* Valores NULL, buffers vacios y longitudes impares
+gcc -std=c99 -Wall -Wextra -g -fsanitize=address,undefined -o reverse_san reverse.c && ./reverse_san
+```
+[PASS] longitud par                 -> "dcba" (esperado "dcba")
+[PASS] longitud impar               -> "edcba" (esperado "edcba")
+[PASS] buffer vacio                 -> "" (esperado "")
+[PASS] un solo caracter             -> "a" (esperado "a")
+[PASS] dos caracteres               -> "ba" (esperado "ba")
+[PASS] palindromo                   -> "racecar" (esperado "racecar")
+[PASS] con espacio                  -> "odnuM aloH" (esperado "odnuM aloH")
+[PASS] arreglo (no literal)         -> "aloh" (esperado "aloh")
+[PASS] puntero NULL, len 0          -> sin crash
+[PASS] puntero NULL, len 5          -> sin crash
+
+Resultado: 10/10 pruebas superadas
+```
 
 * [x] Caso base y límites superados sin *Crash*.
-* [x] No existen accesos fuera de límites ni *Memory Leaks*.
+* [x] No existen accesos fuera de límites ni *Memory Leaks* (AddressSanitizer/UBSan sin reportes).
 * [x] La complejidad teórica coincide con la implementada.
 
 ### Reporte Crítico
