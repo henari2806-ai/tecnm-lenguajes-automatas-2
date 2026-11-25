@@ -1,6 +1,6 @@
-# Bitácora de Requerimientos y Auditoría IA — Sesión 04
+# Bitácora de Requerimientos y Auditoría IA — Sesión 05
 **Materia:** Lenguajes y Autómatas II (SCD-1016)  
-**Tema:** Anatomía de un Árbol Sintáctico Abstracto (AST)  
+**Tema:** Recorridos del AST y Notación Polaca Inversa  
 **Docente Titular:** MCC. Iván Márquez Larios (`ijmarquezl`)  
 **Estudiante:** Ricardo Hernández Naranjo  
 **Matrícula:** [24531374]  
@@ -9,16 +9,17 @@
 ---
 
 ## 1. Fase 1: El Artesano (Dificultad Manual)
-*Reto:* Nodo binario de AST en Heap  
+*Reto:* Recorrido postorden del AST a RPN en un buffer  
 *Describe qué problema o restricción de memoria/sintaxis identificaste al codificar a mano:*
-> Lo más difícil fue entender la recursión en `evaluar`. Tuve que separar el caso base
-> (un nodo número, que solo devuelve su valor) del caso recursivo (un nodo operación,
-> que primero evalúa el hijo izquierdo y el derecho y luego aplica el operador). Al
-> principio olvidaba poner `izq` y `der` en NULL en los nodos número, y como malloc no
-> inicializa la memoria quedaban punteros basura. También tuve que cuidar el orden en
-> `crear_binario`: en una resta, si invierto izquierdo y derecho, 10-4 daría -6 en lugar
-> de 6. Por último, revisé `n == NULL` al inicio de `evaluar` para no tener un fallo de
-> segmentación con la entrada vacía.
+> Lo más difícil fue el manejo del buffer. Como no se puede imprimir con printf, tuve que
+> ir pegando cada token al final del texto, y el separador era un problema: si ponía un
+> espacio después de cada token quedaba un espacio sobrante al final. Lo resolví poniendo
+> el espacio ANTES del token, y solo si el buffer ya tenía algo. También tuve que revisar
+> que el token cupiera dejando lugar para el '\0' (largo actual + espacio + token < cap),
+> porque si no, se escribe fuera del arreglo. Para el orden del recorrido recordé que en
+> postorden primero se visitan los dos hijos y hasta el final la raíz, por eso en 3+(5*2)
+> sale "3 5 2 * +". Para el árbol nulo, puse buf[0] = '\0' al inicio para que quede
+> cadena vacía y no basura.
 
 ---
 
@@ -35,25 +36,23 @@
 ### 2.2 Prompt Estructurado
 ```text
 CONTEXTO: Estoy en la materia Lenguajes y Autómatas II, programando en C (estándar C11).
-Estoy modelando expresiones aritméticas como un árbol sintáctico abstracto (AST). El nodo
-está definido en api_sesion04.h con un enum TipoNodo (NODO_NUM, NODO_BINOP) y los campos
-tipo, valor, op, izq y der. Se compila con gcc -std=c11 -Wall -Wextra -Werror, o sea que
-cualquier advertencia es error.
+Tengo un árbol sintáctico abstracto (AST) definido en api_sesion05.h con un enum TipoNodo
+(NODO_NUM, NODO_BINOP) y los campos tipo, valor, op, izq y der. Quiero convertirlo a
+notación polaca inversa (RPN). Se compila con gcc -std=c11 -Wall -Wextra -Werror, o sea
+que cualquier advertencia es error.
 
 ROL: Actúa como ingeniero de software de sistemas y compiladores, con énfasis en
-estructuras recursivas y manejo seguro de memoria dinámica.
+recorridos de árboles y manejo seguro de buffers.
 
-ESPECIFICACIÓN: Implementa exactamente estas firmas, sin cambiarlas:
-  ASTNode *crear_numero(int v);
-  ASTNode *crear_binario(char op, ASTNode *izq, ASTNode *der);
-  int evaluar(ASTNode *n);
-Reglas: cada nodo se reserva con malloc; usa el campo tipo para distinguir número de
-operación; crear_binario respeta el orden izquierdo/derecho; evaluar evalúa ambos hijos
-antes de aplicar el operador (+, - y * únicamente); evaluar(NULL) devuelve -1 sin
-provocar fallo de segmentación. Debe manejar malloc devolviendo NULL.
+ESPECIFICACIÓN: Implementa exactamente esta firma, sin cambiarla:
+  void postorden(ASTNode *n, char *buf, int cap);
+Reglas: recorre en postorden (izquierdo, derecho, raíz); escribe los tokens separados por
+un solo espacio y sin espacio final; NO uses printf, escribe en el buffer; nunca escribas
+más de cap-1 caracteres más el '\0'; un árbol NULL produce cadena vacía; el buffer siempre
+debe terminar en '\0'. Ejemplo: 3+(5*2) produce "3 5 2 * +".
 
-OUTPUT: Entrégame solo el archivo .c con #include "api_sesion04.h", sin main(), con
-comentarios breves y el análisis de complejidad de cada función.
+OUTPUT: Entrégame solo el archivo .c con #include "api_sesion05.h", sin main(), con
+comentarios breves y el análisis de complejidad de la función.
 ```
 
 ---
@@ -61,93 +60,86 @@ comentarios breves y el análisis de complejidad de cada función.
 ## 3. Código Devuelto por el Modelo
 ```c
 // Código devuelto por el LLM
-#include "api_sesion04.h"
-#include <stdlib.h>
+#include "api_sesion05.h"
+#include <stdio.h>
+#include <string.h>
 
-ASTNode *crear_numero(int v) {
-    ASTNode *n = malloc(sizeof(ASTNode));
+static void emitir(ASTNode *n, char *buf, int cap, int *pos) {
     if (n == NULL) {
-        return NULL;
+        return;
     }
-    n->tipo = NODO_NUM;
-    n->valor = v;
-    n->op = 0;
-    n->izq = NULL;
-    n->der = NULL;
-    return n;
-}
+    emitir(n->izq, buf, cap, pos);
+    emitir(n->der, buf, cap, pos);
 
-ASTNode *crear_binario(char op, ASTNode *izq, ASTNode *der) {
-    ASTNode *n = malloc(sizeof(ASTNode));
-    if (n == NULL) {
-        return NULL;
-    }
-    n->tipo = NODO_BINOP;
-    n->valor = 0;
-    n->op = op;
-    n->izq = izq;
-    n->der = der;
-    return n;
-}
-
-int evaluar(ASTNode *n) {
-    if (n == NULL) {
-        return -1;
-    }
+    char tok[16];
     if (n->tipo == NODO_NUM) {
-        return n->valor;
+        snprintf(tok, sizeof(tok), "%d", n->valor);
+    } else {
+        tok[0] = n->op;
+        tok[1] = '\0';
     }
-    int a = evaluar(n->izq);
-    int b = evaluar(n->der);
-    switch (n->op) {
-        case '+': return a + b;
-        case '-': return a - b;
-        case '*': return a * b;
-        default:  return 0;
+
+    int len = (int)strlen(tok);
+    int sep = (*pos > 0) ? 1 : 0;
+    if (*pos + sep + len >= cap) {
+        return;
     }
+    if (sep) {
+        buf[*pos] = ' ';
+        (*pos)++;
+    }
+    strcpy(buf + *pos, tok);
+    *pos += len;
+}
+
+void postorden(ASTNode *n, char *buf, int cap) {
+    if (buf == NULL || cap <= 0) {
+        return;
+    }
+    buf[0] = '\0';
+    int pos = 0;
+    emitir(n, buf, cap, &pos);
 }
 ```
 
 ---
 
 ## 4. Fase 3: El Auditor (Resultados del Test Harness)
-*Pruebas ejecutadas:* Evaluación de 3+5*2 y 10-4, orden de hijos, operador guardado y evaluar(NULL)
+*Pruebas ejecutadas:* Hoja, 3+(5*2), árbol NULL, (1+2)*(3+4) y 8-3
 
 * [x] Caso base y límites superados sin *Crash*.
-* [ ] No existen accesos fuera de límites ni *Memory Leaks*.
+* [x] No existen accesos fuera de límites ni *Memory Leaks*.
 * [x] La complejidad teórica coincide con la implementada.
 
-**Salida del harness (artesano e IA):** 6/6 pruebas superadas, todas con `OK`.
+**Salida del harness (artesano e IA):** 5/5 pruebas superadas, todas con `OK`.
 
-**Nota sobre la casilla de memory leaks:** no la marqué porque el contrato de esta sesión
-no incluye una función para liberar el árbol. El harness crea nodos con malloc y nunca
-los libera, así que una herramienta como AddressSanitizer reportaría fugas.
+**Memory leaks:** `postorden` no usa malloc (el harness arma los nodos en la pila), así
+que no hay nada que liberar. Los accesos al buffer están protegidos por la revisión
+contra `cap`.
 
-**Complejidad:** `crear_numero` y `crear_binario` son O(1). `evaluar` es O(n) en el
-número de nodos, porque visita cada nodo una vez. El espacio extra es O(h), con h la
-altura del árbol, por la pila de la recursión.
+**Complejidad:** el recorrido visita cada nodo una vez, así que es O(n) en nodos. Mi
+versión usa `strlen` y `strcat` en cada token, que recorren el buffer completo, por lo
+que en el peor caso es O(n·L) con L el largo del texto. La versión de la IA lleva la
+posición en `pos` y es O(n) real. El espacio extra es O(h) por la pila de recursión, con h
+la altura del árbol.
 
 ### Reporte Crítico
 *¿Qué caso borde o problema omitió la IA y cómo lo solucionaste?*
-> La IA pasó los 6 casos del harness, pero omitió varios casos borde:
-> 1. **Operador desconocido:** con `default: return 0` un operador inválido (por ejemplo
->    '/' o '?') devuelve 0 en silencio, y ese valor falso se propaga por todo el árbol.
->    Lo detecté probando a mano `crear_binario('/', ...)`. Lo cambié para devolver -1,
->    como en mi versión.
-> 2. **-1 es ambiguo:** `evaluar(NULL)` devuelve -1, pero -1 también es un resultado
->    válido (por ejemplo 3-4). Quien llama no puede distinguir un error de un valor real.
->    Es una limitación del contrato; una mejora sería devolver el error por un puntero.
-> 3. **Hijo NULL dentro de un binario:** `crear_binario('+', NULL, ...)` se acepta y
->    después `evaluar` calcula con -1 como si fuera un número, dando un resultado
->    incorrecto sin avisar.
-> 4. **Fuga si falla malloc:** si `crear_binario` no logra reservar memoria, devuelve NULL
->    y los hijos que recibió quedan sin liberar.
-> 5. **No hay función para liberar el árbol:** el contrato no la pide y la IA no la
->    propuso, pero un compilador real necesita una `liberar_ast` recursiva que libere los
->    hijos antes que el padre.
+> La IA pasó los 5 casos del harness, pero omitió casos borde:
+> 1. **Truncado silencioso:** si el texto no cabe en el buffer, la función simplemente
+>    deja de agregar el token que no cabe, pero los siguientes tokens más cortos sí
+>    pueden caber. Así queda una RPN incompleta y con tokens faltantes en medio, que
+>    parece válida. Como la función es `void`, quien la llama no puede saber que se
+>    truncó. Lo detecté probando con un buffer de 6 en 3+(5*2). Una mejora sería devolver
+>    un código de error o dejar de escribir en cuanto algo no cabe.
+> 2. **Nodo operación con hijo NULL:** si un `NODO_BINOP` tiene un hijo NULL, el
+>    recorrido lo salta sin avisar y produce un RPN inválido, por ejemplo "3 +" sin su
+>    segundo operando.
+> 3. **Operador inválido:** si `op` vale '\0' en un nodo operación, el token queda como
+>    cadena vacía y se escribe un espacio de más.
+> 4. **Árboles muy profundos:** la recursión puede desbordar la pila si el árbol es una
+>    lista larga (por ejemplo miles de sumas encadenadas).
 >
-> Conclusión: el harness en verde solo comprueba 6 casos "felices". La IA resolvió bien
-> la recursión, pero hay que auditar qué pasa con entradas inválidas y con la memoria.
-
----
-**Firma digital:** [henari2806-ai]
+> Conclusión: el harness en verde solo comprueba 5 casos "felices". El buffer lo cuidó
+> bien la IA, pero hay que auditar qué pasa cuando el texto no cabe y cuando el árbol
+> está mal formado.
