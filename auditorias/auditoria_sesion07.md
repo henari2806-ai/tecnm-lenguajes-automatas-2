@@ -138,4 +138,4 @@ No usa memoria dinámica, por eso no hay fugas.
 > enteros.
 
 ---
-**Firma digital:** [Usuario de GitHub]
+**Firma digital:** [henari2806-ai]
